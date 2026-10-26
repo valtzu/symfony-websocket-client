@@ -9,6 +9,8 @@ use Symfony\Component\HttpClient\Exception\RedirectionException;
 use Symfony\Component\HttpClient\Exception\ServerException;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Contracts\HttpClient\ResponseInterface;
+use Valtzu\WebSocketClient\Profiler\WebSocketTrace;
+use Valtzu\WebSocketClient\Profiler\WebSocketTraceLog;
 
 final class WebSocketResponse implements ResponseInterface
 {
@@ -34,6 +36,7 @@ final class WebSocketResponse implements ResponseInterface
     private ?TransportException $streamError = null;
     private float $startTime;
     private readonly string $url;
+    private readonly ?WebSocketTrace $trace;
 
     /**
      * @param array{scheme: string, authority: string, path: string, query: ?string} $url
@@ -43,10 +46,12 @@ final class WebSocketResponse implements ResponseInterface
         private readonly array $options,
         private readonly FrameEncoder $encoder,
         private readonly Randomizer $randomizer,
+        ?WebSocketTraceLog $traceLog = null,
     ) {
         $this->parser = new FrameParser();
-        $this->url = implode('', ['https:' === $urlParts['scheme'] ? 'wss:' : 'ws:'] + $urlParts);
+        $this->url = ('https:' === $urlParts['scheme'] ? 'wss:' : 'ws:').$urlParts['authority'].$urlParts['path'].($urlParts['query'] ?? '');
         $this->startTime = microtime(true);
+        $this->trace = $traceLog?->start($this->url);
     }
 
     public function __destruct()
@@ -74,6 +79,7 @@ final class WebSocketResponse implements ResponseInterface
             $this->closeSocket();
             $this->closed = true;
             $this->error = $e instanceof TransportException ? $e : new TransportException($e->getMessage(), 0, $e);
+            $this->trace?->fail($this->error->getMessage());
 
             throw $this->error;
         }
@@ -269,10 +275,13 @@ final class WebSocketResponse implements ResponseInterface
     {
         $this->close($e->closeCode);
         $this->streamError = new TransportException($e->getMessage(), 0, $e);
+        $this->trace?->fail($e->getMessage());
     }
 
     private function handleFrame(Frame $frame): void
     {
+        $this->trace?->frame('in', $frame->opcode, $frame->payload);
+
         switch ($frame->opcode) {
             case Frame::PING:
                 $this->sendFrame(Frame::PONG, $frame->payload);
@@ -320,6 +329,7 @@ final class WebSocketResponse implements ResponseInterface
         }
 
         $this->writeAll($this->encoder->encode($opcode, $payload));
+        $this->trace?->frame('out', $opcode, $payload);
     }
 
     private function writeAll(string $data): void
@@ -365,6 +375,7 @@ final class WebSocketResponse implements ResponseInterface
         $key = base64_encode($this->randomizer->getBytes(16));
         $this->writeAll($this->buildRequest($host, $port, $tls, $key));
         $this->readHandshakeResponse();
+        $this->trace?->handshake($this->statusCode, $this->headerLines);
 
         if ($this->statusCode >= 300) {
             $this->readErrorBody();
@@ -484,5 +495,6 @@ final class WebSocketResponse implements ResponseInterface
             @fclose($this->socket);
         }
         $this->socket = null;
+        $this->trace?->close();
     }
 }

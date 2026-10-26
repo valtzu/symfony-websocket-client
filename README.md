@@ -37,3 +37,57 @@ $ws->close();
 * `getContent()` blocks until the server closes the connection and returns all messages concatenated.
 * A non-101 handshake reply (e.g. 403) is exposed as a normal response and `getContent()` throws the usual `HttpExceptionInterface`.
 * `WebSocketResponse` adds `send(string $payload, bool $binary = false)`, `ping()` and `close()`.
+
+### Symfony bundle
+
+Register the bundle:
+
+```php
+// config/bundles.php
+return [
+    // ...
+    Valtzu\WebSocketClient\ValtzuWebSocketClientBundle::class => ['all' => true],
+];
+```
+
+The bundle
+
+* decorates `http_client`, so `ws://` and `wss://` requests are handled by the WebSocket client while everything else goes to the regular HTTP client,
+* registers an autowirable `Valtzu\WebSocketClient\WebSocketClient` service,
+* adds a WebSocket panel to the Symfony profiler in debug mode.
+
+```php
+public function __construct(private HttpClientInterface $httpClient) {}
+
+public function __invoke(): Response
+{
+    $ws = $this->httpClient->request('GET', 'wss://ws.postman-echo.com/raw');
+    $ws->send('Hello world'); // $ws is a WebSocketResponse
+    // ...
+}
+```
+
+Optional configuration:
+
+```yaml
+# config/packages/valtzu_websocket_client.yaml
+valtzu_websocket_client:
+    default_options:
+        timeout: 10
+        headers:
+            Authorization: 'Bearer ...'
+```
+
+Notes:
+
+* `HttpClientInterface::stream()` accepts either only WebSocket responses or only HTTP responses, not a mix of both.
+* Scoped clients (`framework.http_client.scoped_clients`) are not WebSocket-aware; inject `WebSocketClient` for those cases.
+* `WebSocketClient` is the more explicit option when you do not want to rely on the `http_client` decoration.
+
+### Profiler
+
+In debug mode every connection is recorded with its handshake and each frame sent or received.
+
+![Profiler toolbar](docs/toolbar.png)
+
+![Profiler panel](docs/profiler-panel.png)

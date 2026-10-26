@@ -2,6 +2,9 @@
 
 namespace Valtzu\WebSocketClient;
 
+/**
+ * @internal
+ */
 final class FrameParser
 {
     public const DEFAULT_MAX_PAYLOAD = 16 * 1024 * 1024;

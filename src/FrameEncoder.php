@@ -4,6 +4,9 @@ namespace Valtzu\WebSocketClient;
 
 use Random\Randomizer;
 
+/**
+ * @internal
+ */
 final readonly class FrameEncoder
 {
     public function __construct(

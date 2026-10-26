@@ -7,19 +7,17 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Exception\ClientException;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Component\HttpClient\TraceableHttpClient;
 use Valtzu\WebSocketClient\WebSocketClient;
+use Valtzu\WebSocketClient\WebSocketResponse;
 
 class WebSocketClientTest extends TestCase
 {
-    /** @var resource|null */
-    private $process = null;
+    use StartsEchoServer;
 
     protected function tearDown(): void
     {
-        if ($this->process) {
-            proc_terminate($this->process);
-            proc_close($this->process);
-        }
+        $this->stopServer();
     }
 
     #[Test]
@@ -87,6 +85,42 @@ class WebSocketClientTest extends TestCase
     }
 
     #[Test]
+    public function contentIsReadableThroughTraceableClient()
+    {
+        $client = new TraceableHttpClient(new WebSocketClient(['timeout' => 5]));
+        $response = $client->request('GET', $this->startServer('greet'));
+
+        $this->assertSame('HelloWorld', $response->getContent());
+        $this->assertCount(1, $client->getTracedRequests());
+    }
+
+    #[Test]
+    public function streamsThroughTraceableClient()
+    {
+        $client = new TraceableHttpClient(new WebSocketClient(['timeout' => 5]));
+        $response = $client->request('GET', $this->startServer('greet'));
+
+        $messages = [];
+        foreach ($client->stream($response, 5) as $chunk) {
+            if (!$chunk->isFirst() && !$chunk->isLast()) {
+                $messages[] = $chunk->getContent();
+            }
+        }
+
+        $this->assertSame(['Hello', 'World'], $messages);
+    }
+
+    #[Test]
+    public function traceableClientHidesWebSocketMethods()
+    {
+        $client = new TraceableHttpClient(new WebSocketClient(['timeout' => 5]));
+        $response = $client->request('GET', $this->startServer('echo'));
+
+        $this->assertNotInstanceOf(WebSocketResponse::class, $response);
+        $this->assertFalse(method_exists($response, 'send'));
+    }
+
+    #[Test]
     public function timeoutChunkWhenIdle()
     {
         $client = new WebSocketClient();
@@ -133,21 +167,18 @@ class WebSocketClientTest extends TestCase
     }
 
     #[Test]
+    public function infoUrlUsesWebSocketScheme()
+    {
+        $client = new WebSocketClient();
+
+        $this->assertSame('ws://127.0.0.1:8080/socket?a=1', $client->request('GET', 'ws://127.0.0.1:8080/socket?a=1')->getInfo('url'));
+        $this->assertSame('wss://example.com/', $client->request('GET', 'wss://example.com')->getInfo('url'));
+    }
+
+    #[Test]
     public function nonGetMethodIsRejected()
     {
         $this->expectException(\InvalidArgumentException::class);
         (new WebSocketClient())->request('POST', 'ws://127.0.0.1/');
-    }
-
-    private function startServer(string $mode): string
-    {
-        $this->process = proc_open(
-            [PHP_BINARY, __DIR__.'/Fixtures/echo-server.php', $mode],
-            [1 => ['pipe', 'w']],
-            $pipes,
-        );
-        $port = (int) trim(fgets($pipes[1]));
-
-        return "ws://127.0.0.1:$port/socket?a=1";
     }
 }

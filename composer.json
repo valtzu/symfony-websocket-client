@@ -19,6 +19,13 @@
         "symfony/http-client-contracts": "^3.4"
     },
     "require-dev": {
-        "phpunit/phpunit": "^10.5 || ^11.0"
+        "phpunit/phpunit": "^10.5 || ^11.0",
+        "symfony/framework-bundle": "^6.4 || ^7.0 || ^8.0",
+        "symfony/twig-bundle": "^6.4 || ^7.0 || ^8.0",
+        "symfony/web-profiler-bundle": "^6.4 || ^7.0 || ^8.0"
+    },
+    "suggest": {
+        "symfony/framework-bundle": "To use the ValtzuWebSocketClientBundle",
+        "symfony/web-profiler-bundle": "To inspect WebSocket connections in the profiler"
     }
 }

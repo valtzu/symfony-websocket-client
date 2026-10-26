@@ -13,6 +13,7 @@ use Symfony\Component\HttpClient\Response\ResponseStream;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 use Symfony\Contracts\HttpClient\ResponseStreamInterface;
+use Valtzu\WebSocketClient\Profiler\WebSocketTraceLog;
 
 final class WebSocketClient implements HttpClientInterface
 {
@@ -23,6 +24,7 @@ final class WebSocketClient implements HttpClientInterface
     public function __construct(
         array $defaultOptions = [],
         private readonly Randomizer $randomizer = new Randomizer(),
+        private readonly ?WebSocketTraceLog $traceLog = null,
     ) {
         if ($defaultOptions) {
             [, $this->defaultOptions] = self::prepareRequest(null, null, $this->withHttpScheme($defaultOptions), $this->defaultOptions);
@@ -38,7 +40,7 @@ final class WebSocketClient implements HttpClientInterface
         $options = $this->withHttpScheme($options);
         [$url, $options] = self::prepareRequest($method, self::toHttpScheme($url), $options, $this->defaultOptions);
 
-        return new WebSocketResponse($url, $options, new FrameEncoder($this->randomizer), $this->randomizer);
+        return new WebSocketResponse($url, $options, new FrameEncoder($this->randomizer), $this->randomizer, $this->traceLog);
     }
 
     public function stream(ResponseInterface|iterable $responses, ?float $timeout = null): ResponseStreamInterface

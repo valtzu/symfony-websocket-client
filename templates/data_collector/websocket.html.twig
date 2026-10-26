@@ -1,0 +1,140 @@
+{% extends '@WebProfiler/Profiler/layout.html.twig' %}
+
+{% set opcode_names = {0: 'Continuation', 1: 'Text', 2: 'Binary', 8: 'Close', 9: 'Ping', 10: 'Pong'} %}
+
+{% block head %}
+    {{ parent() }}
+
+    <style>
+        .sf-profiler-websocket table { margin-bottom: 1em; }
+        .sf-profiler-websocket .direction { font-weight: bold; white-space: nowrap; }
+        .sf-profiler-websocket .direction-in { color: var(--color-success); }
+        .sf-profiler-websocket .direction-out { color: var(--color-muted); }
+        .sf-profiler-websocket .payload { font-family: var(--font-family-monospace); white-space: pre-wrap; word-break: break-all; }
+        .sf-profiler-websocket .payload-empty { color: var(--gray-600); }
+    </style>
+{% endblock %}
+
+{% block toolbar %}
+    {% if collector.connections %}
+        {% set icon %}
+            {{ source('@WebProfiler/Icon/http-client.svg') }}
+            <span class="sf-toolbar-value">{{ collector.frameCount }}</span>
+        {% endset %}
+
+        {% set text %}
+            <div class="sf-toolbar-info-piece">
+                <b>Connections</b>
+                <span>{{ collector.connections|length }}</span>
+            </div>
+            <div class="sf-toolbar-info-piece">
+                <b>Frames</b>
+                <span>{{ collector.frameCount }}</span>
+            </div>
+        {% endset %}
+
+        {{ include('@WebProfiler/Profiler/toolbar_item.html.twig', {link: profiler_url}) }}
+    {% endif %}
+{% endblock %}
+
+{% block menu %}
+    <span class="label {{ collector.connections ? '' : 'disabled' }}">
+        <span class="icon" aria-hidden="true">{{ source('@WebProfiler/Icon/http-client.svg') }}</span>
+        <strong>WebSocket</strong>
+        {% if collector.connections %}
+            <span class="count">{{ collector.connections|length }}</span>
+        {% endif %}
+    </span>
+{% endblock %}
+
+{% block panel %}
+    <h2>WebSocket</h2>
+
+    {% if not collector.connections %}
+        <div class="empty empty-panel">
+            <p>No WebSocket connections were made.</p>
+        </div>
+    {% else %}
+        <div class="metrics">
+            <div class="metric">
+                <span class="value">{{ collector.connections|length }}</span>
+                <span class="label">Connections</span>
+            </div>
+            <div class="metric">
+                <span class="value">{{ collector.frameCount }}</span>
+                <span class="label">Frames</span>
+            </div>
+        </div>
+
+        <div class="sf-profiler-websocket">
+            {% for connection in collector.connections %}
+                <h3>{{ connection.url }}</h3>
+
+                <table>
+                    <tbody>
+                        <tr>
+                            <th class="font-normal">Handshake</th>
+                            <td>
+                                {% if connection.status is null %}
+                                    <span class="text-danger">not completed</span>
+                                {% else %}
+                                    <strong>{{ connection.status }}</strong>
+                                {% endif %}
+                                {% if connection.error %}
+                                    <span class="text-danger">{{ connection.error }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="font-normal">Duration</th>
+                            <td>{{ connection.duration is null ? 'still open' : '%.1f ms'|format(connection.duration * 1000) }}</td>
+                        </tr>
+                        {% if connection.headers %}
+                            <tr>
+                                <th class="font-normal">Response headers</th>
+                                <td class="payload">{{ connection.headers|join("\n") }}</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+
+                {% if connection.frames %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Time</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th class="full-width">Payload</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for frame in connection.frames %}
+                                <tr>
+                                    <td class="direction direction-{{ frame.direction }}">{{ frame.direction == 'in' ? '↓ received' : '↑ sent' }}</td>
+                                    <td class="nowrap">+{{ '%.1f ms'|format((frame.time - connection.start) * 1000) }}</td>
+                                    <td>{{ opcode_names[frame.opcode]|default(frame.opcode) }}</td>
+                                    <td class="nowrap">{{ frame.size }} B</td>
+                                    <td class="payload{{ frame.preview is null or frame.preview == '' ? ' payload-empty' }}">
+                                        {%- if frame.preview is null -%}
+                                            {{ frame.size ? '(binary)' : '(empty)' }}
+                                        {%- elseif frame.preview == '' -%}
+                                            (empty)
+                                        {%- else -%}
+                                            {{ frame.preview }}
+                                        {%- endif -%}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <div class="empty">
+                        <p>No frames were exchanged.</p>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endblock %}

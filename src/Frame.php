@@ -2,6 +2,9 @@
 
 namespace Valtzu\WebSocketClient;
 
+/**
+ * @internal
+ */
 final readonly class Frame
 {
     public const CONTINUATION = 0x0;

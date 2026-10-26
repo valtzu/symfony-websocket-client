@@ -2,6 +2,9 @@
 
 namespace Valtzu\WebSocketClient;
 
+/**
+ * @internal
+ */
 final class ProtocolException extends \RuntimeException
 {
     public const PROTOCOL_ERROR = 1002;
