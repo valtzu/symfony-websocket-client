@@ -32,6 +32,18 @@ if ('greet' === $mode) {
     exit;
 }
 
+if ('invalid-utf8' === $mode) {
+    fwrite($connection, $frame(0x1, "\xff\xfe"));
+    fread($connection, 4096);
+    exit;
+}
+
+if ('reserved-bits' === $mode) {
+    fwrite($connection, chr(0xc1).chr(0));
+    fread($connection, 4096);
+    exit;
+}
+
 while (!feof($connection)) {
     $header = fread($connection, 2);
     if (strlen($header) < 2) {

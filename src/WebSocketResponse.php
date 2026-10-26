@@ -26,10 +26,12 @@ final class WebSocketResponse implements ResponseInterface
     /** @var list<string> */
     private array $messages = [];
     private string $fragments = '';
+    private ?int $fragmentOpcode = null;
     private int $consumedBytes = 0;
     private bool $closed = false;
     private bool $canceled = false;
     private ?\Throwable $error = null;
+    private ?TransportException $streamError = null;
     private float $startTime;
     private readonly string $url;
 
@@ -112,6 +114,10 @@ final class WebSocketResponse implements ResponseInterface
                 $content .= $message;
             }
             if ($this->closed) {
+                if ($this->streamError) {
+                    throw $this->streamError;
+                }
+
                 return $content;
             }
             $read = [$this->socket];
@@ -151,7 +157,7 @@ final class WebSocketResponse implements ResponseInterface
     {
         $info = [
             'canceled' => $this->canceled,
-            'error' => $this->error?->getMessage(),
+            'error' => ($this->error ?? $this->streamError)?->getMessage(),
             'http_code' => $this->statusCode ?? 0,
             'http_method' => 'GET',
             'redirect_count' => 0,
@@ -190,6 +196,14 @@ final class WebSocketResponse implements ResponseInterface
     public function isClosed(): bool
     {
         return $this->closed && !$this->messages;
+    }
+
+    /**
+     * @internal
+     */
+    public function streamError(): ?TransportException
+    {
+        return $this->streamError;
     }
 
     /**
@@ -239,10 +253,22 @@ final class WebSocketResponse implements ResponseInterface
             if ('' === $data) {
                 return;
             }
-            foreach ($this->parser->feed($data) as $frame) {
-                $this->handleFrame($frame);
+            try {
+                foreach ($this->parser->feed($data) as $frame) {
+                    $this->handleFrame($frame);
+                }
+            } catch (ProtocolException $e) {
+                $this->fail($e);
+
+                return;
             }
         }
+    }
+
+    private function fail(ProtocolException $e): void
+    {
+        $this->close($e->closeCode);
+        $this->streamError = new TransportException($e->getMessage(), 0, $e);
     }
 
     private function handleFrame(Frame $frame): void
@@ -258,11 +284,32 @@ final class WebSocketResponse implements ResponseInterface
                 return;
         }
 
-        $this->fragments .= $frame->payload;
-        if ($frame->final) {
-            $this->messages[] = $this->fragments;
-            $this->fragments = '';
+        if (Frame::CONTINUATION === $frame->opcode) {
+            if (null === $this->fragmentOpcode) {
+                throw new ProtocolException('Received a continuation frame without a message to continue.');
+            }
+        } elseif (null !== $this->fragmentOpcode) {
+            throw new ProtocolException('Received a new data frame before the previous message was completed.');
+        } else {
+            $this->fragmentOpcode = $frame->opcode;
         }
+
+        if (strlen($this->fragments) + strlen($frame->payload) > FrameParser::DEFAULT_MAX_PAYLOAD) {
+            throw new ProtocolException('Received a message larger than the allowed limit.', ProtocolException::MESSAGE_TOO_BIG);
+        }
+
+        $this->fragments .= $frame->payload;
+        if (!$frame->final) {
+            return;
+        }
+
+        if (Frame::TEXT === $this->fragmentOpcode && !preg_match('//u', $this->fragments)) {
+            throw new ProtocolException('Received a text message that is not valid UTF-8.', ProtocolException::INVALID_PAYLOAD);
+        }
+
+        $this->messages[] = $this->fragments;
+        $this->fragments = '';
+        $this->fragmentOpcode = null;
     }
 
     private function sendFrame(int $opcode, string $payload): void

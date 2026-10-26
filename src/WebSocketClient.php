@@ -104,7 +104,9 @@ final class WebSocketClient implements HttpClientInterface
                 }
                 if ($response->isClosed()) {
                     unset($active[$id]);
-                    yield $response => new LastChunk($response->consumedBytes());
+                    yield $response => $response->streamError()
+                        ? new ErrorChunk($response->consumedBytes(), $response->streamError())
+                        : new LastChunk($response->consumedBytes());
                 }
             }
 

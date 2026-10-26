@@ -64,6 +64,29 @@ class WebSocketClientTest extends TestCase
     }
 
     #[Test]
+    public function invalidUtf8TextIsTransportException()
+    {
+        $response = (new WebSocketClient(['timeout' => 5]))->request('GET', $this->startServer('invalid-utf8'));
+
+        $this->expectException(TransportException::class);
+        $this->expectExceptionMessage('not valid UTF-8');
+        $response->getContent();
+    }
+
+    #[Test]
+    public function protocolViolationYieldsErrorChunk()
+    {
+        $client = new WebSocketClient(['timeout' => 5]);
+        $response = $client->request('GET', $this->startServer('reserved-bits'));
+
+        $this->expectException(TransportException::class);
+        $this->expectExceptionMessage('reserved bits');
+        foreach ($client->stream($response, 5) as $chunk) {
+            $chunk->isFirst();
+        }
+    }
+
+    #[Test]
     public function timeoutChunkWhenIdle()
     {
         $client = new WebSocketClient();

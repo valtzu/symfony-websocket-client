@@ -4,10 +4,22 @@ namespace Valtzu\WebSocketClient;
 
 final class FrameParser
 {
+    public const DEFAULT_MAX_PAYLOAD = 16 * 1024 * 1024;
+
+    private const DATA_OPCODES = [Frame::CONTINUATION, Frame::TEXT, Frame::BINARY];
+    private const CONTROL_OPCODES = [Frame::CLOSE, Frame::PING, Frame::PONG];
+
     private string $buffer = '';
+
+    public function __construct(
+        private readonly int $maxPayload = self::DEFAULT_MAX_PAYLOAD,
+    ) {
+    }
 
     /**
      * @return list<Frame> the frames completed by the given bytes
+     *
+     * @throws ProtocolException
      */
     public function feed(string $data): array
     {
@@ -28,7 +40,20 @@ final class FrameParser
             return null;
         }
 
-        $masked = (ord($this->buffer[1]) & 0x80) !== 0;
+        $first = ord($this->buffer[0]);
+        $final = ($first & 0x80) !== 0;
+        $opcode = $first & 0x0f;
+
+        if (($first & 0x70) !== 0) {
+            throw new ProtocolException('Received a frame with reserved bits set.');
+        }
+        if (!in_array($opcode, self::DATA_OPCODES, true) && !in_array($opcode, self::CONTROL_OPCODES, true)) {
+            throw new ProtocolException(sprintf('Received a frame with unknown opcode %d.', $opcode));
+        }
+        if (($this->buffer[1] & "\x80") !== "\x00") {
+            throw new ProtocolException('Received a masked frame from the server.');
+        }
+
         $length = ord($this->buffer[1]) & 0x7f;
         $offset = 2;
 
@@ -41,13 +66,14 @@ final class FrameParser
             $offset += $extendedLength;
         }
 
-        $maskingKey = '';
-        if ($masked) {
-            if ($available < $offset + 4) {
-                return null;
-            }
-            $maskingKey = substr($this->buffer, $offset, 4);
-            $offset += 4;
+        if ($length < 0) {
+            throw new ProtocolException('Received a frame with an invalid length.');
+        }
+        if ($opcode >= Frame::CLOSE && (!$final || $length > 125)) {
+            throw new ProtocolException('Received a fragmented or oversized control frame.');
+        }
+        if ($length > $this->maxPayload) {
+            throw new ProtocolException(sprintf('Received a frame larger than the %d byte limit.', $this->maxPayload), ProtocolException::MESSAGE_TOO_BIG);
         }
 
         if ($available < $offset + $length) {
@@ -55,13 +81,8 @@ final class FrameParser
         }
 
         $payload = substr($this->buffer, $offset, $length);
-        if ($masked) {
-            $payload ^= str_repeat($maskingKey, ($length >> 2) + 1);
-        }
-
-        $first = ord($this->buffer[0]);
         $this->buffer = substr($this->buffer, $offset + $length);
 
-        return new Frame(($first & 0x80) !== 0, $first & 0x0f, $payload);
+        return new Frame($final, $opcode, $payload);
     }
 }
