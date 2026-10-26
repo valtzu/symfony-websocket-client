@@ -1,0 +1,24 @@
+{
+    "name": "valtzu/symfony-websocket-client",
+    "description": "WebSocket client implementing Symfony HttpClientInterface",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Valtzu\\WebSocketClient\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Valtzu\\WebSocketClient\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "php": ">=8.2",
+        "symfony/http-client": "^6.4 || ^7.0 || ^8.0",
+        "symfony/http-client-contracts": "^3.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5 || ^11.0"
+    }
+}
